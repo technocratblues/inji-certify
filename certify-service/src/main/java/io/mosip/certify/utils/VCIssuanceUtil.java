@@ -139,7 +139,14 @@ public class VCIssuanceUtil {
         credentialConfigurationSupported.setFormat(credentialConfig.getFormat());
         credentialConfigurationSupported.setScope(credentialConfig.getScope());
         credentialConfigurationSupported.setId(credentialConfigId);
-        credentialConfigurationSupported.setProofTypesSupported(credentialConfig.getProofTypesSupported());
+        credentialConfigurationSupported.setCryptographicBindingMethodsSupported(
+                credentialConfig.getCryptographicBindingMethodsSupported());
+        // proof_types_supported is nullable on credential_config default to an empty map here
+        // so every downstream consumer (proof validators, issuance flows) can rely on a non-null map instead of each caller re-implementing the same null-check.
+        credentialConfigurationSupported.setProofTypesSupported(
+                credentialConfig.getProofTypesSupported() != null
+                        ? credentialConfig.getProofTypesSupported()
+                        : Collections.emptyMap());
         if (credentialConfig.getCredentialDefinition() != null) {
             credentialConfigurationSupported.setTypes(credentialConfig.getCredentialDefinition().getType());
             credentialConfigurationSupported.setContext(credentialConfig.getCredentialDefinition().getContext());

@@ -67,6 +67,8 @@ public class VCIssuanceServiceImplTest {
     private ProofValidator proofValidator;
     @Mock
     private CredentialConfigurationService credentialConfigurationService; // Added mock
+    @Mock
+    private HolderBindingEvaluator holderBindingEvaluator;
 
     @InjectMocks
     private VCIssuanceServiceImpl issuanceService;
@@ -154,6 +156,11 @@ public class VCIssuanceServiceImplTest {
         mockGlobalCredentialIssuerMetadataDTO.setCredentialConfigurationSupportedDTO(supportedCredsMap);
         when(credentialConfigurationService.fetchCredentialIssuerMetadata())
                 .thenReturn(mockGlobalCredentialIssuerMetadataDTO);
+
+        // Default: holder binding required, preserving existing proof-validation flow for all
+        // pre-existing tests below. Tests exercising the "not required" / missing-proofs paths
+        // override this stub explicitly.
+        when(holderBindingEvaluator.isHolderBindingRequired(any())).thenReturn(true);
     }
 
     private CredentialRequest createValidCredentialRequest(String format) throws Exception {
@@ -478,6 +485,39 @@ public class VCIssuanceServiceImplTest {
         request = createValidCredentialRequest(VCFormats.LDP_VC);
         when(parsedAccessToken.isActive()).thenReturn(false); // Token not active
         assertThrows(NotAuthenticatedException.class, () -> issuanceService.getCredential(request));
+    }
+
+    @Test
+    public void getCredential_HolderBindingNotRequired_SkipsProofValidation_Success() throws Exception {
+        request = createValidCredentialRequest(VCFormats.LDP_VC);
+        when(parsedAccessToken.isActive()).thenReturn(true);
+        when(parsedAccessToken.getClaims()).thenReturn(claimsFromAccessToken);
+        when(holderBindingEvaluator.isHolderBindingRequired(any())).thenReturn(false);
+
+        VCResult<JsonLDObject> vcResultLdp = new VCResult<>();
+        vcResultLdp.setCredential(new JsonLDObject());
+        when(vcIssuancePlugin.getVerifiableCredentialWithLinkedDataProof(any(VCRequestDto.class), isNull(), eq(claimsFromAccessToken)))
+                .thenReturn(vcResultLdp);
+
+        CredentialResponse<?> response = issuanceService.getCredential(request);
+
+        assertNotNull(response);
+        verifyNoInteractions(proofValidatorFactory, proofValidator);
+        verify(auditWrapper).logAudit(eq(io.mosip.certify.api.util.Action.VC_ISSUANCE), eq(io.mosip.certify.api.util.ActionStatus.SUCCESS), any(), isNull());
+    }
+
+    @Test
+    public void getCredential_HolderBindingRequired_MissingProofs_ThrowsInvalidProof() {
+        request = new CredentialRequest();
+        request.setCredentialConfigId("test-credential-id-ldp");
+        request.setProofs(null); // no proofs submitted, but holder binding is required (default stub)
+
+        when(parsedAccessToken.isActive()).thenReturn(true);
+        when(parsedAccessToken.getClaims()).thenReturn(claimsFromAccessToken);
+
+        CertifyException ex = assertThrows(CertifyException.class, () -> issuanceService.getCredential(request));
+        assertEquals(VCIErrorConstants.INVALID_PROOF, ex.getErrorCode());
+        verifyNoInteractions(proofValidatorFactory);
     }
 
     @Test

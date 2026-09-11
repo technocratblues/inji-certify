@@ -83,6 +83,9 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
     private ProofValidatorFactory proofValidatorFactory;
 
     @Autowired
+    private HolderBindingEvaluator holderBindingEvaluator;
+
+    @Autowired
     private VCICacheService vcICacheService;
 
     @Autowired
@@ -154,59 +157,73 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
             throw new CertifyException(VCIErrorConstants.INVALID_SCOPE, "No credential mapping found for the provided scope.");
         }
 
-        // 3. Proof Validation
+        // 3. Determine whether holder binding (and therefore proof validation) is required
         String clientId = (String) parsedAccessToken.getClaims().get(Constants.CLIENT_ID);
         String accessTokenHash = parsedAccessToken.getAccessTokenHash();
-        Map<String, Object> supportedProofTypes = credentialConfigurationSupported.getProofTypesSupported();
-        Map<ProofType, Set<String>> proofs = credentialRequest.getProofs()
-                .entrySet()
-                .stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue() == null
-                                ? Collections.emptySet()
-                                : new LinkedHashSet<>(entry.getValue()),
-                        (a, b) -> a,
-                        LinkedHashMap::new
-                ));
-        List<String> holderIds = new ArrayList<>();
-        String nonceEndpoint = credentialIssuerMetadataDTO.getNonceEndpoint();
-        for (Map.Entry<ProofType,Set<String>> entry : proofs.entrySet()) {
-            String proofType = entry.getKey().toString().toLowerCase();
-            ProofValidator proofValidator = proofValidatorFactory.getProofValidator(proofType);
-            for (String proofValue : entry.getValue()) {
-                try {
-                    String validCNonce = VCIssuanceUtil.validateAndGetClientNonce(vcICacheService, proofValue, log, nonceEndpoint);
+        boolean holderBindingRequired = holderBindingEvaluator.isHolderBindingRequired(credentialConfigurationSupported);
 
-                    boolean isValid = proofValidator.validate(clientId, validCNonce, proofValue, supportedProofTypes);
-                    if (!isValid) {
-                        continue;
+        if (!holderBindingRequired) {
+            // skip proof validation entirely and issue a single credential without holder-specific binding information.
+            log.info("Holder binding is not required for credential_configuration_id [{}]; skipping proof validation.",
+                    credentialRequest.getCredentialConfigId());
+            vcResults.add(getVerifiableCredential(credentialConfigurationSupported, null));
+        } else {
+            // 4. Proof Validation (unchanged existing flow, only entered when holder binding is required)
+            if (credentialRequest.getProofs() == null || credentialRequest.getProofs().isEmpty()) {
+                throw new CertifyException(VCIErrorConstants.INVALID_PROOF,
+                        "Holder binding is required for this credential configuration; proofs must be provided.");
+            }
+            Map<String, Object> supportedProofTypes = credentialConfigurationSupported.getProofTypesSupported();
+            Map<ProofType, Set<String>> proofs = credentialRequest.getProofs()
+                    .entrySet()
+                    .stream()
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            entry -> entry.getValue() == null
+                                    ? Collections.emptySet()
+                                    : new LinkedHashSet<>(entry.getValue()),
+                            (a, b) -> a,
+                            LinkedHashMap::new
+                    ));
+            List<String> holderIds = new ArrayList<>();
+            String nonceEndpoint = credentialIssuerMetadataDTO.getNonceEndpoint();
+            for (Map.Entry<ProofType, Set<String>> entry : proofs.entrySet()) {
+                String proofType = entry.getKey().toString().toLowerCase();
+                ProofValidator proofValidator = proofValidatorFactory.getProofValidator(proofType);
+                for (String proofValue : entry.getValue()) {
+                    try {
+                        String validCNonce = VCIssuanceUtil.validateAndGetClientNonce(vcICacheService, proofValue, log, nonceEndpoint);
+
+                        boolean isValid = proofValidator.validate(clientId, validCNonce, proofValue, supportedProofTypes);
+                        if (!isValid) {
+                            continue;
+                        }
+                        if (validCNonce != null) {
+                            auditWrapper.logAudit(Action.NONCE_VALIDATION, ActionStatus.SUCCESS,
+                                    AuditHelper.buildAuditDto(validCNonce, "cNonce"), null);
+                        }
+                        String keyMaterial = proofValidator.getKeyMaterial(proofValue);
+                        if (keyMaterial != null) {
+                            holderIds.add(keyMaterial);
+                        }
+                    } catch (CertifyException e) {
+                        auditWrapper.logAudit(Action.PROOF_VALIDATION, ActionStatus.ERROR,
+                                AuditHelper.buildAuditDto(accessTokenHash, "accessTokenHash"), e);
+                        throw e;
                     }
-                    if (validCNonce != null) {
-                        auditWrapper.logAudit(Action.NONCE_VALIDATION, ActionStatus.SUCCESS,
-                                AuditHelper.buildAuditDto(validCNonce, "cNonce"), null);
-                    }
-                    String keyMaterial = proofValidator.getKeyMaterial(proofValue);
-                    if (keyMaterial != null) {
-                        holderIds.add(keyMaterial);
-                    }
-                } catch (CertifyException e) {
-                    auditWrapper.logAudit(Action.PROOF_VALIDATION, ActionStatus.ERROR,
-                            AuditHelper.buildAuditDto(accessTokenHash, "accessTokenHash"), e);
-                    throw e;
                 }
             }
-        }
 
-        if(holderIds.isEmpty()) {
-            throw new CertifyException(VCIErrorConstants.INVALID_PROOF, "None of the submitted proofs passed validation.");
-        }
+            if (holderIds.isEmpty()) {
+                throw new CertifyException(VCIErrorConstants.INVALID_PROOF, "None of the submitted proofs passed validation.");
+            }
 
-        auditWrapper.logAudit(Action.PROOF_VALIDATION, ActionStatus.SUCCESS,
-                AuditHelper.buildAuditDto(accessTokenHash, "accessTokenHash"), null);
+            auditWrapper.logAudit(Action.PROOF_VALIDATION, ActionStatus.SUCCESS,
+                    AuditHelper.buildAuditDto(accessTokenHash, "accessTokenHash"), null);
 
-        for (String holderId : holderIds) {
-            vcResults.add(getVerifiableCredential(credentialConfigurationSupported, holderId));
+            for (String holderId : holderIds) {
+                vcResults.add(getVerifiableCredential(credentialConfigurationSupported, holderId));
+            }
         }
 
         auditWrapper.logAudit(Action.VC_ISSUANCE, ActionStatus.SUCCESS,
@@ -257,7 +274,11 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
                     vcRequestDto.setVct(credentialConfigurationSupported.getVct());
                     templateName = CredentialUtils.getTemplateName(vcRequestDto);
                     templateParams.put(Constants.VCTYPE, vcRequestDto.getVct());
-                    templateParams.put(Constants.CONFIRMATION, Map.of("kid", holderId));
+                    // cnf (confirmation) claim represents holder binding; only include it when
+                    // a holderId was established via proof validation.
+                    if (holderId != null) {
+                        templateParams.put(Constants.CONFIRMATION, Map.of("kid", holderId));
+                    }
                     templateParams.put(Constants.ISSUER, certifyIssuer);
                     jsonObject.put(Constants.TYPE, vcRequestDto.getVct());
                     break;
@@ -279,9 +300,11 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
             if (!StringUtils.isEmpty(renderTemplateId)) {
                 templateParams.put(Constants.RENDERING_TEMPLATE_ID, renderTemplateId);
             }
+            // org.json.JSONObject#put removes the key when value is null, so a null holderId correctly results in "_holderId" being absent downstream
             jsonObject.put("_holderId", holderId);
             templateParams.putAll(jsonObject.toMap());
-            if(!StringUtils.isEmpty(idPrefix)) {
+            // The CredentialSubject.id  attribute represents holder-bound issuance; only generate it when a holderId was established via proof validation.
+            if (holderId != null && !StringUtils.isEmpty(idPrefix)) {
                 templateParams.put(VCDMConstants.CREDENTIAL_ID, idPrefix + UUID.randomUUID());
             }
             ZonedDateTime zonedDateTime = ZonedDateTime.now(ZoneOffset.UTC);

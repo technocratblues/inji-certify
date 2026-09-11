@@ -604,6 +604,32 @@ public class MDocProcessorTest {
     }
 
     @Test
+    public void should_omitDeviceKeyInfo_when_holderIdIsNull() throws Exception {
+        // Optional holder binding: when no holderId was established (proof validation skipped
+        // because the issuer does not require holder binding), the MSO must not carry a
+        // deviceKeyInfo entry.
+        Map<String, Object> mDocJson = new HashMap<>();
+        mDocJson.put("_docType", "org.iso.18013.5.1.mDL");
+        // Note: no "_holderId" key added
+
+        Map<String, Object> mso = mDocProcessor.createMobileSecurityObject(mDocJson, new HashMap<>());
+
+        assertNotNull("MSO should not be null", mso);
+        assertFalse("MSO should not have deviceKeyInfo when holderId is absent", mso.containsKey("deviceKeyInfo"));
+    }
+
+    @Test
+    public void should_omitDeviceKeyInfo_when_holderIdIsExplicitlyNull() throws Exception {
+        Map<String, Object> mDocJson = new HashMap<>();
+        mDocJson.put("_docType", "org.iso.18013.5.1.mDL");
+        mDocJson.put("_holderId", null);
+
+        Map<String, Object> mso = mDocProcessor.createMobileSecurityObject(mDocJson, new HashMap<>());
+
+        assertFalse("MSO should not have deviceKeyInfo when holderId is explicitly null", mso.containsKey("deviceKeyInfo"));
+    }
+
+    @Test
     public void should_mapCorrectly_when_p384CurveUsed() throws Exception {
         String jwkJson = "{\"kty\":\"EC\",\"crv\":\"P-384\","
                 + "\"x\":\"MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4\","

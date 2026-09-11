@@ -72,7 +72,9 @@ public class JwtProofValidator implements ProofValidator {
         try {
             SignedJWT jwt = (SignedJWT) JWTParser.parse(proofJwt);
             Map<String, Object> jwtConfiguration;
-            if(proofConfiguration.get("jwt") != null) {
+            // proofConfiguration (backed by credential_config.proof_types_supported) is nullable;
+            // treat a missing/null config the same as "jwt" not being supported for this credential.
+            if(proofConfiguration != null && proofConfiguration.get("jwt") != null) {
                 jwtConfiguration =(Map<String, Object>) proofConfiguration.get("jwt");
             } else {
                 throw new InvalidRequestException(UNSUPPORTED_ALGORITHM);

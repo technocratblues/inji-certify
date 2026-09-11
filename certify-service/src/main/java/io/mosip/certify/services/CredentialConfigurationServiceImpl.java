@@ -101,7 +101,12 @@ public class CredentialConfigurationServiceImpl implements CredentialConfigurati
         credentialConfig.setStatus(Constants.ACTIVE);
 
 
-        credentialConfig.setCryptographicBindingMethodsSupported(cryptographicBindingMethodsSupportedMap.get(credentialConfig.getCredentialFormat()));
+        List<String> resolvedBindingMethods = cryptographicBindingMethodsSupportedMap.get(credentialConfig.getCredentialFormat());
+        if (resolvedBindingMethods == null) {
+            log.warn("No cryptographic_binding_methods_supported configured for credential format '{}'; " +
+                    "persisting null for config {}.", credentialConfig.getCredentialFormat(), credentialConfig.getConfigId());
+        }
+        credentialConfig.setCryptographicBindingMethodsSupported(resolvedBindingMethods);
         credentialConfig.setCredentialSigningAlgValuesSupported(Collections.singletonList(credentialConfig.getSignatureCryptoSuite()));
         credentialConfig.setProofTypesSupported(proofTypesSupported);
 
@@ -390,8 +395,14 @@ public class CredentialConfigurationServiceImpl implements CredentialConfigurati
         CredentialConfigurationDTO credentialConfigurationDTO = credentialConfigMapper.toDto(credentialConfig);
         credentialConfigurationSupported.setFormat(credentialConfigurationDTO.getCredentialFormat());
         credentialConfigurationSupported.setScope(credentialConfigurationDTO.getScope());
-        credentialConfigurationSupported.setCryptographicBindingMethodsSupported(credentialConfig.getCryptographicBindingMethodsSupported());
-        credentialConfigurationSupported.setProofTypesSupported(credentialConfig.getProofTypesSupported());
+        // NOTE: do NOT default null to an empty collection here. This DTO is @JsonInclude(NON_NULL)
+        // and feeds the public /.well-known/openid-credential-issuer response, where "attribute
+        // absent from the config" must be published as the key being omitted -- not present with []/{},
+        // which is a semantically different, spec-visible value. Pass the entity value through as-is.
+        credentialConfigurationSupported.setCryptographicBindingMethodsSupported(
+                credentialConfig.getCryptographicBindingMethodsSupported());
+        credentialConfigurationSupported.setProofTypesSupported(
+                credentialConfig.getProofTypesSupported());
 
         CredentialMetadataDTO credentialMetadataDTO = new CredentialMetadataDTO();
         credentialMetadataDTO.setDisplay(credentialConfigurationDTO.getMetaDataDisplay());

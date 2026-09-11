@@ -238,6 +238,7 @@ public class VelocityTemplatingEngineImpl implements VCFormatter {
             }
         }
         VelocityContext context = new VelocityContext(updatedTemplateParams);
+
         engine.evaluate(context, writer, /*logTag */ templateName, vcTemplateString); // use vcTemplateString
         JSONObject jsonObject = new JSONObject(writer.toString());
         if (updatedTemplateParams.containsKey(VCDMConstants.CREDENTIAL_ID)) {
@@ -246,11 +247,14 @@ public class VelocityTemplatingEngineImpl implements VCFormatter {
         if(updatedTemplateParams.containsKey(VCDM2Constants.CREDENTIAL_STATUS) && templateName.contains(VCDM2Constants.URL)) {
             jsonObject.put(VCDM2Constants.CREDENTIAL_STATUS, updatedTemplateParams.get(VCDM2Constants.CREDENTIAL_STATUS));
         }
-        if( updatedTemplateParams.containsKey(VCTYPE) && updatedTemplateParams.containsKey(CONFIRMATION)
-                && updatedTemplateParams.containsKey(ISSUER)) {
+        // vct and issuer are always present for SD-JWT; cnf only exists when holder binding was performed
+        if (updatedTemplateParams.containsKey(VCTYPE) && updatedTemplateParams.containsKey(ISSUER)) {
             jsonObject.put(VCTYPE, updatedTemplateParams.get(VCTYPE));
-            jsonObject.put(CONFIRMATION, updatedTemplateParams.get(CONFIRMATION));
             jsonObject.put(ISSUER, updatedTemplateParams.get(ISSUER));
+        }
+        // cnf is optional — only add it when a holder was actually bound
+        if (updatedTemplateParams.containsKey(CONFIRMATION)) {
+            jsonObject.put(CONFIRMATION, updatedTemplateParams.get(CONFIRMATION));
         }
 
         return jsonObject.toString();

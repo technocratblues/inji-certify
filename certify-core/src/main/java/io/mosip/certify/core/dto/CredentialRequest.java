@@ -8,7 +8,6 @@ package io.mosip.certify.core.dto;
 import io.mosip.certify.core.constants.ErrorConstants;
 import io.mosip.certify.core.constants.VCIErrorConstants;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 import java.util.List;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -24,15 +23,16 @@ public class CredentialRequest {
     private String credentialConfigId;
 
     /**
-     * REQUIRED (in this implementation).
+     * CONDITIONALLY REQUIRED: only when the resolved credential configuration advertises
+     * holder binding support (see HolderBindingEvaluator). Absent/empty is valid at the
+     * DTO level; the service layer enforces presence when holder binding is required.
      * JSON object containing proof(s) of possession of the key material the issued Credential shall be bound to.
      * Keys are proof types (e.g., "jwt"); values are non-empty lists of proof strings.
      */
     @Valid
-    @NotEmpty(message = VCIErrorConstants.INVALID_PROOF)
     private Map<
             ProofType,
-            @NotEmpty(message = VCIErrorConstants.INVALID_PROOF) List<
+            List<
                     @NotBlank(message = VCIErrorConstants.INVALID_PROOF) String
                     >
             > proofs;

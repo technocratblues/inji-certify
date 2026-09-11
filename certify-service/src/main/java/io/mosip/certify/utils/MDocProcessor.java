@@ -436,10 +436,12 @@ public class MDocProcessor {
         }
         mso.put(Constants.VALIDITY_INFO, validityInfo);
 
-        // Add device key info (placeholder - should be from wallet's PoP)
-        Map<String, Object> deviceKeyInfo = createDeviceKeyInfo(mDocJson.get(Constants._HOLDER_ID));
-        mso.put("deviceKeyInfo", deviceKeyInfo);
-
+        // deviceKeyInfo represents holder binding information; only include it when the issuer requires holder binding and a holderId was established via proof validation.
+        Object holderIdValue = mDocJson.get(Constants._HOLDER_ID);
+        if (holderIdValue != null) {
+            Map<String, Object> deviceKeyInfo = createDeviceKeyInfo(holderIdValue);
+            mso.put("deviceKeyInfo", deviceKeyInfo);
+        }
         return mso;
     }
 
