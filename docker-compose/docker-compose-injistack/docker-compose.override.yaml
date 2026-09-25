@@ -1,0 +1,4 @@
+services:
+  certify:
+    volumes:
+      - D:/GIlobalbackups/inji-certify/inji-certify/certify-service/target/certify-service-1.0.0-alpha.2-SNAPSHOT.jar:/home/inji/certify-service.jar:ro

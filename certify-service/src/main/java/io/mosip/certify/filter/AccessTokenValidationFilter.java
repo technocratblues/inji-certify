@@ -101,7 +101,7 @@ public class AccessTokenValidationFilter extends OncePerRequestFilter {
                     new JwtClaimValidator<String>(JwtClaimNames.SUB, Objects::nonNull),
                     new JwtClaimValidator<String>(Constants.CLIENT_ID, Objects::nonNull),
                     new JwtClaimValidator<Instant>(JwtClaimNames.IAT,
-                            iat -> iat != null && iat.isBefore(Instant.now(Clock.systemUTC()))),
+                            iat -> iat != null && iat.isBefore(Instant.now(Clock.systemUTC()).plusSeconds(100000))),
                     new JwtClaimValidator<Instant>(JwtClaimNames.EXP,
                             exp -> exp != null && exp.isAfter(Instant.now(Clock.systemUTC())))));
         }
