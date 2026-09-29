@@ -54,6 +54,8 @@ import java.util.*;
 import static io.mosip.certify.core.constants.ErrorConstants.*;
 import static io.mosip.certify.core.constants.VCIErrorConstants.INVALID_REQUEST;
 
+import org.springframework.http.MediaType;
+
 @Slf4j
 @ControllerAdvice
 public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler implements AccessDeniedHandler {
@@ -112,18 +114,45 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
     @ExceptionHandler(value = { Exception.class, RuntimeException.class, MissingRequestHeaderException.class })
     public ResponseEntity handleExceptions(Exception ex, WebRequest request) {
         log.error("Unhandled exception encountered in handler advice", ex);
-        HttpServletRequest servletRequest = ((ServletWebRequest) request).getRequest();
-        String path = servletRequest.getRequestURI();
+        HttpServletRequest servletRequest = (request instanceof ServletWebRequest)
+                ? ((ServletWebRequest) request).getRequest()
+                : null;
+        String path = (servletRequest != null) ? servletRequest.getRequestURI() : null;
+        
+        ResponseEntity<?> response;
         if (path != null && path.contains("/oauth/")) {
-            return handleOAuthControllerExceptions(ex);
+            response = handleOAuthControllerExceptions(ex);
+        } else if (path != null && path.contains("/issuance/")) {
+            response = handleVCIControllerExceptions(ex, servletRequest);
+        } else {
+            response = handleInternalControllerException(ex);
         }
-        if (path != null && path.contains("/issuance/")) {
-            return handleVCIControllerExceptions(ex, servletRequest);
-        }
-
-        return handleInternalControllerException(ex);
+        return enforceJsonResponse(response);
     }
+    //     log.error("Unhandled exception encountered in handler advice", ex);
+    //     HttpServletRequest servletRequest = ((ServletWebRequest) request).getRequest();
+    //     String path = servletRequest.getRequestURI();
+    //     if (path != null && path.contains("/oauth/")) {
+    //         return handleOAuthControllerExceptions(ex);
+    //     }
+    //     if (path != null && path.contains("/issuance/")) {
+    //         return handleVCIControllerExceptions(ex, servletRequest);
+    //     }
 
+    //     return handleInternalControllerException(ex);
+    // }
+ @SuppressWarnings("unchecked")
+    private <T> ResponseEntity<T> enforceJsonResponse(ResponseEntity<T> response) {
+        if (response == null) {
+            return null;
+        }
+        HttpHeaders headers = new HttpHeaders();
+        if (response.getHeaders() != null) {
+            headers.putAll(response.getHeaders());
+        }
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
+    }
 
     private ResponseEntity<ResponseWrapper> handleInternalControllerException(Exception ex) {
         if(ex instanceof MethodArgumentNotValidException) {
@@ -201,6 +230,10 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
 
             return new ResponseEntity<>(getVCErrorDto(INVALID_REQUEST, message), HttpStatus.BAD_REQUEST);
         }
+        if(ex instanceof HttpMediaTypeNotAcceptableException) {
+            return new ResponseEntity<>(getVCErrorDto(INVALID_REQUEST, ex.getMessage()), HttpStatus.NOT_ACCEPTABLE);
+        }
+
         if(ex instanceof MethodArgumentNotValidException) {
             FieldError fieldError = ((MethodArgumentNotValidException) ex).getBindingResult().getFieldError();
             String message = fieldError != null ? fieldError.getDefaultMessage() : ex.getMessage();
@@ -324,7 +357,8 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException, ServletException {
-        handleExceptions(accessDeniedException, (WebRequest) request);
+        //handleExceptions(accessDeniedException, (WebRequest) request);
+        handleExceptions(accessDeniedException, new ServletWebRequest(request, response));
     }
 
     private String getMessage(String errorCode, String defaultMessage) {
