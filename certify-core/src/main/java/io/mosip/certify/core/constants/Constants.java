@@ -47,6 +47,8 @@ public class Constants {
     public static final String __CBOR_TAG = "__cbor_tag";
     public static final String __CBOR_VALUE = "__cbor_value";
     public static final String SIGNED = "signed";
+    // no fractional seconds, literal "Z" for UTC offset
+    public static final String MDOC_DATETIME_PATTERN = "yyyy-MM-dd'T'HH:mm:ss'Z'";
     //End of mDoc specific
 
     public static final String _HOLDER_ID = "_holderId";
