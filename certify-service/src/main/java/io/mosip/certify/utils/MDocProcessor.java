@@ -81,10 +81,10 @@ public class MDocProcessor {
                     (String) validity.get(VCDM2Constants.VALID_UNTIL),
                     "Missing validUntil"
             );
-
+            // ISO 18013-5 requires tDate/ValidityInfo timestamps without fractional
+            // seconds and with a "Z" UTC suffix, so mDoc uses its own pattern here.
             ZonedDateTime currentTime = ZonedDateTime.now(ZoneOffset.UTC);
-            String formattedCurrentTime = currentTime.format(DateTimeFormatter.ofPattern(Constants.UTC_DATETIME_PATTERN));
-
+            String formattedCurrentTime = currentTime.format(DateTimeFormatter.ofPattern(Constants.MDOC_DATETIME_PATTERN));
             if ("${_validFrom}".equals(validFromValue)) {
                 validity.put(VCDM2Constants.VALID_FROM, createCBORTaggedDateTime(formattedCurrentTime));
             }
@@ -93,7 +93,7 @@ public class MDocProcessor {
             }
             if ("${_validUntil}".equals(validUntilValue)) {
                 String futureTime = currentTime.plusYears(mDocConfig.getValidityPeriodYears())
-                        .format(DateTimeFormatter.ofPattern(Constants.UTC_DATETIME_PATTERN));
+                        .format(DateTimeFormatter.ofPattern(Constants.MDOC_DATETIME_PATTERN));
                 validity.put(VCDM2Constants.VALID_UNTIL, createCBORTaggedDateTime(futureTime));
             }
 

@@ -56,15 +56,15 @@ public class MDocProcessorTest {
     private static final Map<String, Map<String, ? extends Serializable>> expectedValidityInfo = Map.of(
             "signed", Map.of(
                     Constants.__CBOR_TAG, 0,
-                    Constants.__CBOR_VALUE, "2026-07-20T10:00:00.000Z"
+                    Constants.__CBOR_VALUE, "2026-07-20T10:00:00Z"
             ),
             "validFrom", Map.of(
                     Constants.__CBOR_TAG, 0,
-                    Constants.__CBOR_VALUE, "2026-07-20T10:00:00.000Z"
+                    Constants.__CBOR_VALUE, "2026-07-20T10:00:00Z"
             ),
             "validUntil", Map.of(
                     Constants.__CBOR_TAG, 0,
-                    Constants.__CBOR_VALUE, "2031-07-20T10:00:00.000Z"
+                    Constants.__CBOR_VALUE, "2031-07-20T10:00:00Z"
             )
     );
 
@@ -167,6 +167,39 @@ public class MDocProcessorTest {
         assertTrue(signed.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*"));
         assertTrue("ValidUntil should match ISO 8601",
                 validUntil.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*"));
+    }
+
+    // Regression test for #1044: ValidityInfo timestamps (and the tDate, tag 0,
+    // they're wrapped in) must have no fractional seconds and end with a literal "Z".
+    @Test
+    public void processTemplatedJson_ValidityInfoTimestamps_MatchISO18013RFC3339Format() {
+        String templatedJSON = "{"
+                + "\"docType\": \"org.iso.18013.5.1.mDL\","
+                + "\"validityInfo\": {"
+                + "  \"validFrom\": \"${_validFrom}\","
+                + "  \"validUntil\": \"${_validUntil}\","
+                + "  \"signed\": \"${_signed}\""
+                + "},"
+                + "\"nameSpaces\": {}"
+                + "}";
+        // Second-precision, literal Z, no fractional seconds - per ISO 18013-5 pages 16 & 51.
+        String rfc3339NoFraction = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$";
+
+        Map<String, Object> result = mDocProcessor.processTemplatedJson(templatedJSON, new HashMap<>());
+        Map<String, Object> validityInfo = (Map<String, Object>) result.get("validityInfo");
+
+        String validFrom = (String) ((Map<String, Object>) validityInfo.get(VCDM2Constants.VALID_FROM)).get(Constants.__CBOR_VALUE);
+        String validUntil = (String) ((Map<String, Object>) validityInfo.get(VCDM2Constants.VALID_UNTIL)).get(Constants.__CBOR_VALUE);
+        String signed = (String) ((Map<String, Object>) validityInfo.get(Constants.SIGNED)).get(Constants.__CBOR_VALUE);
+
+        assertTrue("validFrom must have no fractional seconds and end with Z", validFrom.matches(rfc3339NoFraction));
+        assertTrue("validUntil must have no fractional seconds and end with Z", validUntil.matches(rfc3339NoFraction));
+        assertTrue("signed must have no fractional seconds and end with Z", signed.matches(rfc3339NoFraction));
+
+        // Every generated tDate (tag 0) must also carry the CBOR tag itself.
+        assertEquals(0, ((Map<String, Object>) validityInfo.get(VCDM2Constants.VALID_FROM)).get(Constants.__CBOR_TAG));
+        assertEquals(0, ((Map<String, Object>) validityInfo.get(VCDM2Constants.VALID_UNTIL)).get(Constants.__CBOR_TAG));
+        assertEquals(0, ((Map<String, Object>) validityInfo.get(Constants.SIGNED)).get(Constants.__CBOR_TAG));
     }
 
     @Test
