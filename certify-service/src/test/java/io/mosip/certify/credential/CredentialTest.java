@@ -13,7 +13,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
-
+import java.util.Map;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
@@ -101,6 +101,69 @@ public class CredentialTest {
                 .thenThrow(new RuntimeException("cwt service failure"));
 
         credential.signQRData("p", "alg", "app", "ref", "did");
+    }
+
+    // Runs signQRData and hands back the protected-header map sent to keymanager.
+    // Each x5u/x5t test below only changes the two inputs.
+    private Map<String, Object> signQrAndCaptureProtectedHeader(String x5uUrl, boolean x5tEnabled) {
+        CoseSignResponseDto response = new CoseSignResponseDto();
+        response.setSignedData("signed.cwt.data");
+        when(mockCoseSignatureService.cwtSign(any(CWTSignRequestDto.class))).thenReturn(response);
+
+        credential.signQRData("payload", "ES256", "app-1", "ref-1", "did:example:123", x5uUrl, x5tEnabled);
+
+        ArgumentCaptor<CWTSignRequestDto> captor = ArgumentCaptor.forClass(CWTSignRequestDto.class);
+        verify(mockCoseSignatureService, times(1)).cwtSign(captor.capture());
+        return captor.getValue().getProtectedHeader();
+    }
+
+    @Test
+    public void testSignQRData_X5tEnabled_RequestsCertHashAndDropsX5c() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader(null, true);
+
+        assertTrue(Boolean.TRUE.equals(header.get("includeCertificateHash")));
+        assertFalse(header.containsKey("certificateUrl"));
+        assertFalse(header.containsKey("x5c"));
+    }
+
+    @Test
+    public void testSignQRData_X5uSet_AddsCertificateUrlAndDropsX5c() {
+        String x5uUrl = "https://certify.example.com/v1/certify/.well-known/qr-signing-cert";
+
+        Map<String, Object> header = signQrAndCaptureProtectedHeader(x5uUrl, false);
+
+        assertEquals(x5uUrl, header.get("certificateUrl"));
+        assertFalse(header.containsKey("includeCertificateHash"));
+        assertFalse(header.containsKey("x5c"));
+    }
+
+    @Test
+    public void testSignQRData_X5uAndX5tEnabled_AddsBothAndDropsX5c() {
+        String x5uUrl = "https://certify.example.com/v1/certify/.well-known/qr-signing-cert";
+
+        Map<String, Object> header = signQrAndCaptureProtectedHeader(x5uUrl, true);
+
+        assertEquals(x5uUrl, header.get("certificateUrl"));
+        assertTrue(Boolean.TRUE.equals(header.get("includeCertificateHash")));
+        assertFalse(header.containsKey("x5c"));
+    }
+
+    @Test
+    public void testSignQRData_BlankX5uAndX5tOff_FallsBackToX5c() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader("   ", false);
+
+        assertTrue(Boolean.TRUE.equals(header.get("x5c")));
+        assertFalse(header.containsKey("certificateUrl"));
+        assertFalse(header.containsKey("includeCertificateHash"));
+    }
+
+    @Test
+    public void testSignQRData_KidIsRequestedInEveryHeaderCombination() {
+        assertTrue(Boolean.TRUE.equals(signQrAndCaptureProtectedHeader(null, false).get("kid")));
+        reset(mockCoseSignatureService);
+        assertTrue(Boolean.TRUE.equals(signQrAndCaptureProtectedHeader(null, true).get("kid")));
+        reset(mockCoseSignatureService);
+        assertTrue(Boolean.TRUE.equals(signQrAndCaptureProtectedHeader("https://example.com/cert", true).get("kid")));
     }
 
 }

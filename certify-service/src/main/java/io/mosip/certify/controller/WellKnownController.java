@@ -4,16 +4,20 @@ import io.mosip.certify.core.dto.CredentialIssuerMetadataDTO;
 import io.mosip.certify.core.spi.CredentialConfigurationService;
 import io.mosip.certify.core.spi.JwksService;
 import io.mosip.certify.core.spi.VCIssuanceService;
+import io.mosip.kernel.keymanagerservice.dto.KeyPairGenerateResponseDto;
+import io.mosip.kernel.keymanagerservice.service.KeymanagerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 public class WellKnownController {
@@ -27,6 +31,9 @@ public class WellKnownController {
     @Autowired
     private JwksService jwksService;
 
+    @Autowired
+    private KeymanagerService keymanagerService;
+
     @GetMapping(value = "/.well-known/openid-credential-issuer", produces = "application/json")
     public CredentialIssuerMetadataDTO getCredentialIssuerMetadata() {
         return credentialConfigurationService.fetchCredentialIssuerMetadata();
@@ -35,6 +42,15 @@ public class WellKnownController {
     @GetMapping(value = "/.well-known/did.json", produces = "application/json")
     public Map<String, Object> getDIDDocument() {
         return vcIssuanceService.getDIDDocument();
+    }
+
+    // Serves the signing cert as raw PEM so verifiers can fetch it
+    // through the x5u URL placed in the QR's COSE header.
+    @GetMapping(value = "/.well-known/qr-signing-cert", produces = "application/x-pem-file")
+    public ResponseEntity<String> getQrSigningCert(@RequestParam("applicationId") String applicationId,
+                                                   @RequestParam(value = "referenceId", required = false) String referenceId) {
+        KeyPairGenerateResponseDto keyPair = keymanagerService.getCertificate(applicationId, Optional.ofNullable(referenceId));
+        return ResponseEntity.ok(keyPair.getCertificate());
     }
 
     @GetMapping(value = "/.well-known/jwks.json", produces = "application/json")

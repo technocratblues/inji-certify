@@ -882,6 +882,42 @@ public class CertifyIssuanceServiceImplTest {
 
     @Test
     public void getCredential_QRDataPresent_Claim169ValuesAdded() throws Exception {
+        W3CJsonLD mockW3CJsonLD = issueCredentialWithClaim169Qr();
+
+        // x5u and x5t are off by default, so signing gets no URL and no hash flag.
+        verify(mockW3CJsonLD).signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), isNull(), eq(false));
+        verify(mockW3CJsonLD).signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), isNull(), eq(false));
+    }
+
+    @Test
+    public void getCredential_QRDataPresent_X5uAndX5tEnabled_PassedToQrSigning() throws Exception {
+        String x5uUrl = "https://certify.example.com/v1/certify/.well-known/qr-signing-cert?applicationId=APP&referenceId=REF";
+        ReflectionTestUtils.setField(issuanceService, "qrX5uEnabled", true);
+        ReflectionTestUtils.setField(issuanceService, "qrX5uUrl", x5uUrl);
+        ReflectionTestUtils.setField(issuanceService, "qrX5tEnabled", true);
+
+        W3CJsonLD mockW3CJsonLD = issueCredentialWithClaim169Qr();
+
+        verify(mockW3CJsonLD).signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), eq(x5uUrl), eq(true));
+        verify(mockW3CJsonLD).signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), eq(x5uUrl), eq(true));
+    }
+
+    @Test
+    public void getCredential_QRDataPresent_X5uDisabledWithUrlConfigured_UrlNotPassed() throws Exception {
+        // A configured URL must be ignored while the x5u switch is off. x5t alone still goes through.
+        ReflectionTestUtils.setField(issuanceService, "qrX5uEnabled", false);
+        ReflectionTestUtils.setField(issuanceService, "qrX5uUrl", "https://certify.example.com/cert");
+        ReflectionTestUtils.setField(issuanceService, "qrX5tEnabled", true);
+
+        W3CJsonLD mockW3CJsonLD = issueCredentialWithClaim169Qr();
+
+        verify(mockW3CJsonLD).signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), isNull(), eq(true));
+        verify(mockW3CJsonLD).signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), isNull(), eq(true));
+    }
+
+    // Shared flow for the Claim 169 QR tests: issues one credential with two QR entries
+    // and returns the credential mock so each test can verify how signQRData was called.
+    private W3CJsonLD issueCredentialWithClaim169Qr() throws Exception {
         request = createValidCredentialRequest(DEFAULT_FORMAT_LDP);
 
         when(parsedAccessToken.isActive()).thenReturn(true);
@@ -911,11 +947,10 @@ public class CertifyIssuanceServiceImplTest {
         when(pixelPass.getMappedData(eq(qrData2), anyMap(), anyMap(), eq(true))).thenReturn(mappedData2);
 
         // Mock signQRData to return signed QR strings
-        when(mockW3CJsonLD.signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString()))
+        when(mockW3CJsonLD.signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), any(), anyBoolean()))
                 .thenReturn("signedQR1");
-        when(mockW3CJsonLD.signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString()))
+        when(mockW3CJsonLD.signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), any(), anyBoolean()))
                 .thenReturn("signedQR2");
-
         when(pixelPass.generateQRData(eq("signedQR1"), eq(""))).thenReturn("qrCodeData1");
         when(pixelPass.generateQRData(eq("signedQR2"), eq(""))).thenReturn("qrCodeData2");
         // Usual formatter mocks
@@ -945,6 +980,7 @@ public class CertifyIssuanceServiceImplTest {
         assertEquals(2, claim169Values.size());
         assertTrue(claim169Values.contains("qrCodeData1"));
         assertTrue(claim169Values.contains("qrCodeData2"));
+        return mockW3CJsonLD;
     }
 
     @Test

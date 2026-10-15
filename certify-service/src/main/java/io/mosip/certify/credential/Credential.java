@@ -20,7 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Slf4j
 public abstract class Credential{
-    
+
     protected VCFormatter vcFormatter;
 
     protected SignatureService signatureService;
@@ -76,11 +76,11 @@ public abstract class Credential{
     }
 
     /**
-     * Creates a signature/proof and based on the actual implementation the input 
+     * Creates a signature/proof and based on the actual implementation the input
      * could be different, for eg: Base64, Sringified JSON etc.
-     * <p>In the defaulat abstract implementation we assume 
+     * <p>In the defaulat abstract implementation we assume
      * ```Base64.getUrlEncoder().encodeToString(vcInBytes)``` </p>
-     * @param vcToSign actual vc bytes 
+     * @param vcToSign actual vc bytes
      * @param headers headers to be added. Can be null.
      * @param signAlgorithm Signature algorithm RS256, PS256, ES256, etc
      * @param appID application id as per the keymanager table
@@ -92,7 +92,7 @@ public abstract class Credential{
         JWSSignatureRequestDto payload = new JWSSignatureRequestDto();
         payload.setDataToSign(vcToSign);
         payload.setApplicationId(appID);
-        payload.setReferenceId(refID); 
+        payload.setReferenceId(refID);
         payload.setIncludePayload(false);
         payload.setIncludeCertificate(false);
         payload.setIncludeCertHash(true);
@@ -109,14 +109,27 @@ public abstract class Credential{
     }
 
     /*
-    * Signs the QR data payload using CWT signature
-    * @param payload The QR data payload to be signed
-    * @param qrSignAlgorithm The QR signing algorithm
-    * @param appID Application ID for key retrieval
-    * @param refID Reference ID for key retrieval
-    * @param didUrl DID URL of the issuer
-    */
+     * Signs the QR data payload using CWT signature
+     * @param payload The QR data payload to be signed
+     * @param qrSignAlgorithm The QR signing algorithm
+     * @param appID Application ID for key retrieval
+     * @param refID Reference ID for key retrieval
+     * @param didUrl DID URL of the issuer
+     */
+    public String signQRData(String payload, String qrSignAlgorithm, String appID, String refID, String didUrl, String x5uUrl) {
+        return signQRData(payload, qrSignAlgorithm, appID, refID, didUrl, x5uUrl, false);
+    }
+
     public String signQRData(String payload, String qrSignAlgorithm, String appID, String refID, String didUrl) {
+        return signQRData(payload, qrSignAlgorithm, appID, refID, didUrl, null, false);
+    }
+
+    /*
+     * Same as above, plus optional x5u URL and x5t cert hash header
+     * @param x5uUrl URL where the signing cert is served; null keeps x5c
+     * @param x5tEnabled true adds the SHA-256 cert hash to the COSE header
+     */
+    public String signQRData(String payload, String qrSignAlgorithm, String appID, String refID, String didUrl, String x5uUrl, boolean x5tEnabled) {
         CWTSignRequestDto cwtSignRequestDto = new CWTSignRequestDto();
         cwtSignRequestDto.setClaim169Payload(payload);
         cwtSignRequestDto.setApplicationId(appID);
@@ -125,7 +138,18 @@ public abstract class Credential{
         cwtSignRequestDto.setIssuer(didUrl);
 
         Map<String, Object> protectedHeaders = new HashMap<>();
-        protectedHeaders.put("x5c", true);
+        boolean hasUrl = x5uUrl != null && !x5uUrl.isBlank();
+        // x5u and x5t replace x5c. If neither is on, x5c stays
+        // so the verifier still finds the cert like before.
+        if (hasUrl) {
+            protectedHeaders.put("certificateUrl", x5uUrl);
+        }
+        if (x5tEnabled) {
+            protectedHeaders.put("includeCertificateHash", true);
+        }
+        if (!hasUrl && !x5tEnabled) {
+            protectedHeaders.put("x5c", true);
+        }
         protectedHeaders.put("kid", true);
 
         cwtSignRequestDto.setProtectedHeader(protectedHeaders);

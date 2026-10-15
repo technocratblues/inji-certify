@@ -71,6 +71,18 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
     @Value("${mosip.certify.data-provider-plugin.did-url}")
     private String didUrl;
 
+    // switch x5u (signing cert URL) on or off for QR codes.
+    @Value("${mosip.certify.qr.x5u.enabled:false}")
+    private boolean qrX5uEnabled;
+
+    // Full URL where the signing cert is served; used only if x5u is enabled.
+    @Value("${mosip.certify.qr.x5u.url:}")
+    private String qrX5uUrl;
+
+    // switch x5t (signing cert hash) on or off for QR codes.
+    @Value("${mosip.certify.qr.x5t.enabled:false}")
+    private boolean qrX5tEnabled;
+
     @Value("${mosip.certify.data-provider-plugin.rendering-template-id:}")
     private String renderTemplateId;
 
@@ -404,7 +416,9 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
                         qrSignatureAlgo,
                         qrSignAppId,
                         qrSignRefId,
-                        domainUrl
+                        domainUrl,
+                        qrX5uEnabled ? qrX5uUrl : null,
+                        qrX5tEnabled
                 );
                 log.info("Signed QR data for entry index {}", i);
                 if (qrSignedResult != null && !qrSignedResult.isEmpty()) {

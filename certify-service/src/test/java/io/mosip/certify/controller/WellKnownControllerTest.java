@@ -6,6 +6,8 @@ import io.mosip.certify.core.exception.InvalidRequestException;
 import io.mosip.certify.core.spi.CredentialConfigurationService;
 import io.mosip.certify.core.spi.JwksService;
 import io.mosip.certify.core.spi.VCIssuanceService;
+import io.mosip.kernel.keymanagerservice.dto.KeyPairGenerateResponseDto;
+import io.mosip.kernel.keymanagerservice.service.KeymanagerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -18,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -44,6 +47,9 @@ class WellKnownControllerTest {
 
     @MockBean
     private JwksService jwksService;
+
+    @MockBean
+    private KeymanagerService keymanagerService;
 
     @InjectMocks
     private WellKnownController wellKnownController;
@@ -191,5 +197,36 @@ class WellKnownControllerTest {
                 .andExpect(jsonPath("$.keys[1].kid").value("key2"));
 
         verify(jwksService, times(1)).getJwks();
+    }
+
+    @Test
+    void getQrSigningCert_withReferenceId_returnsPemFromKeymanager() throws Exception {
+        String pem = "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----";
+        KeyPairGenerateResponseDto keyPair = mock(KeyPairGenerateResponseDto.class);
+        when(keyPair.getCertificate()).thenReturn(pem);
+        when(keymanagerService.getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.of("ED25519_SIGN"))).thenReturn(keyPair);
+
+        mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "CERTIFY_VC_SIGN_ED25519")
+                        .param("referenceId", "ED25519_SIGN"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(pem));
+
+        verify(keymanagerService, times(1)).getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.of("ED25519_SIGN"));
+    }
+
+    @Test
+    void getQrSigningCert_withoutReferenceId_passesEmptyOptional() throws Exception {
+        String pem = "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----";
+        KeyPairGenerateResponseDto keyPair = mock(KeyPairGenerateResponseDto.class);
+        when(keyPair.getCertificate()).thenReturn(pem);
+        when(keymanagerService.getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.empty())).thenReturn(keyPair);
+
+        mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "CERTIFY_VC_SIGN_ED25519"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(pem));
+
+        verify(keymanagerService, times(1)).getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.empty());
     }
 }
