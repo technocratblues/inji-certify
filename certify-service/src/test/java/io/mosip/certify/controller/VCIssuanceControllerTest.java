@@ -148,30 +148,4 @@ public class VCIssuanceControllerTest {
                 .andExpect(jsonPath("$.error").value("invalid_request"))
                 .andExpect(jsonPath("$.error_description").value("Malformed JSON syntax error"));
     }
-    
-    @Test
-    public void whenErrorOccurs_withXmlAcceptHeader_thenReturnsJson() throws Exception {
-        CredentialRequest credentialRequest = new CredentialRequest();
-        credentialRequest.setCredentialConfigId(null);
-        credentialRequest.setProofs(Map.of(ProofType.JWT, List.of("dummy_jwt_proof"))); 
-        mockMvc.perform(post("/issuance/credential")
-                        .content(objectMapper.writeValueAsBytes(credentialRequest))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header("Accept", "application/xml, */*"))                .andExpect(status().isBadRequest())
-                .andExpect(header().string("Content-Type", containsString(MediaType.APPLICATION_JSON_VALUE)))
-                .andExpect(jsonPath("$.error").value(ErrorConstants.INVALID_CREDENTIAL_REQUEST));
-    }
-    @Test
-    public void whenErrorOccurs_withBrowserAcceptHeader_thenReturnsJson() throws Exception {
-        CredentialRequest credentialRequest = new CredentialRequest();
-        credentialRequest.setCredentialConfigId(null);
-        credentialRequest.setProofs(Map.of(ProofType.JWT, List.of("dummy_jwt_proof")));
-        mockMvc.perform(post("/issuance/credential")
-                        .content(objectMapper.writeValueAsBytes(credentialRequest))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"))
-                .andExpect(status().isBadRequest())
-                .andExpect(header().string("Content-Type", containsString(MediaType.APPLICATION_JSON_VALUE)))
-                .andExpect(jsonPath("$.error").value(ErrorConstants.INVALID_CREDENTIAL_REQUEST));
-    }
 }

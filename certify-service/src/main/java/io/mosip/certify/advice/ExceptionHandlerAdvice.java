@@ -129,18 +129,7 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
         }
         return enforceJsonResponse(response);
     }
-    //     log.error("Unhandled exception encountered in handler advice", ex);
-    //     HttpServletRequest servletRequest = ((ServletWebRequest) request).getRequest();
-    //     String path = servletRequest.getRequestURI();
-    //     if (path != null && path.contains("/oauth/")) {
-    //         return handleOAuthControllerExceptions(ex);
-    //     }
-    //     if (path != null && path.contains("/issuance/")) {
-    //         return handleVCIControllerExceptions(ex, servletRequest);
-    //     }
-
-    //     return handleInternalControllerException(ex);
-    // }
+    
  @SuppressWarnings("unchecked")
     private <T> ResponseEntity<T> enforceJsonResponse(ResponseEntity<T> response) {
         if (response == null) {
@@ -357,7 +346,6 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException, ServletException {
-        //handleExceptions(accessDeniedException, (WebRequest) request);
         handleExceptions(accessDeniedException, new ServletWebRequest(request, response));
     }
 
