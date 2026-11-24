@@ -21,6 +21,7 @@ import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -112,18 +113,36 @@ public class ExceptionHandlerAdvice extends ResponseEntityExceptionHandler imple
     @ExceptionHandler(value = { Exception.class, RuntimeException.class, MissingRequestHeaderException.class })
     public ResponseEntity handleExceptions(Exception ex, WebRequest request) {
         log.error("Unhandled exception encountered in handler advice", ex);
+
         HttpServletRequest servletRequest = ((ServletWebRequest) request).getRequest();
         String path = servletRequest.getRequestURI();
+
         if (path != null && path.contains("/oauth/")) {
-            return handleOAuthControllerExceptions(ex);
-        }
-        if (path != null && path.contains("/issuance/")) {
-            return handleVCIControllerExceptions(ex, servletRequest);
+            return asJson(handleOAuthControllerExceptions(ex));
         }
 
-        return handleInternalControllerException(ex);
+        if (path != null && path.contains("/issuance/")) {
+            return asJson(handleVCIControllerExceptions(ex, servletRequest));
+        }
+
+        return asJson(handleInternalControllerException(ex));
     }
 
+
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+                                                             HttpStatusCode statusCode, WebRequest request) {
+        return asJson(super.handleExceptionInternal(ex, body, headers, statusCode, request));
+    }
+
+    // Controller-level `produces` is dropped by Spring once an exception is resolved, so the
+    // error body would be negotiated from Accept and converter order. Pin it to JSON here.
+    private <T> ResponseEntity<T> asJson(ResponseEntity<T> response) {
+        return ResponseEntity.status(response.getStatusCode())
+                .headers(response.getHeaders())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response.getBody());
+    }
 
     private ResponseEntity<ResponseWrapper> handleInternalControllerException(Exception ex) {
         if(ex instanceof MethodArgumentNotValidException) {

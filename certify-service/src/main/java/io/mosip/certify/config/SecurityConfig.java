@@ -47,6 +47,9 @@ public class SecurityConfig {
     @Value("${server.servlet.path}")
     private String servletPath;
 
+    @Autowired
+    private JsonAccessDeniedHandler jsonAccessDeniedHandler;
+
     @Value("#{${mosip.certify.security.auth.post-urls}}")
     private Map<String, List<String>> securePostUrls;
 
@@ -90,7 +93,9 @@ public class SecurityConfig {
                                 .build())
                 )
         );
-        http.exceptionHandling(exceptionConfigurer -> exceptionConfigurer.authenticationEntryPoint(localAuthenticationEntryPoint));
+        http.exceptionHandling(exceptionConfigurer -> exceptionConfigurer
+                .authenticationEntryPoint(localAuthenticationEntryPoint)
+                .accessDeniedHandler(jsonAccessDeniedHandler));
         http.sessionManagement(sessionConfigurer -> sessionConfigurer.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         return http.build();
     }
