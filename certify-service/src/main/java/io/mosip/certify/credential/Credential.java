@@ -16,11 +16,13 @@ import io.mosip.kernel.signature.service.impl.CoseSignatureServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriComponentsBuilder;
 
 
 @Slf4j
 public abstract class Credential{
-    
+
     protected VCFormatter vcFormatter;
 
     protected SignatureService signatureService;
@@ -76,11 +78,11 @@ public abstract class Credential{
     }
 
     /**
-     * Creates a signature/proof and based on the actual implementation the input 
+     * Creates a signature/proof and based on the actual implementation the input
      * could be different, for eg: Base64, Sringified JSON etc.
-     * <p>In the defaulat abstract implementation we assume 
+     * <p>In the defaulat abstract implementation we assume
      * ```Base64.getUrlEncoder().encodeToString(vcInBytes)``` </p>
-     * @param vcToSign actual vc bytes 
+     * @param vcToSign actual vc bytes
      * @param headers headers to be added. Can be null.
      * @param signAlgorithm Signature algorithm RS256, PS256, ES256, etc
      * @param appID application id as per the keymanager table
@@ -92,7 +94,7 @@ public abstract class Credential{
         JWSSignatureRequestDto payload = new JWSSignatureRequestDto();
         payload.setDataToSign(vcToSign);
         payload.setApplicationId(appID);
-        payload.setReferenceId(refID); 
+        payload.setReferenceId(refID);
         payload.setIncludePayload(false);
         payload.setIncludeCertificate(false);
         payload.setIncludeCertHash(true);
@@ -109,14 +111,23 @@ public abstract class Credential{
     }
 
     /*
-    * Signs the QR data payload using CWT signature
-    * @param payload The QR data payload to be signed
-    * @param qrSignAlgorithm The QR signing algorithm
-    * @param appID Application ID for key retrieval
-    * @param refID Reference ID for key retrieval
-    * @param didUrl DID URL of the issuer
-    */
+     * Signs the QR data payload using CWT signature
+     * @param payload The QR data payload to be signed
+     * @param qrSignAlgorithm The QR signing algorithm
+     * @param appID Application ID for key retrieval
+     * @param refID Reference ID for key retrieval
+     * @param didUrl DID URL of the issuer
+     */
     public String signQRData(String payload, String qrSignAlgorithm, String appID, String refID, String didUrl) {
+        return signQRData(payload, qrSignAlgorithm, appID, refID, didUrl, null);
+    }
+
+    /*
+     * RFC 9360: x5u must be paired with x5t in the protected header so the fetched cert is
+     * integrity protected. certificateUrl is built here as x5uEndpoint?applicationId=..&referenceId=..
+     * x5c is only a fallback when no endpoint is available.
+     */
+    public String signQRData(String payload, String qrSignAlgorithm, String appID, String refID, String didUrl, String x5uEndpoint) {
         CWTSignRequestDto cwtSignRequestDto = new CWTSignRequestDto();
         cwtSignRequestDto.setClaim169Payload(payload);
         cwtSignRequestDto.setApplicationId(appID);
@@ -125,7 +136,12 @@ public abstract class Credential{
         cwtSignRequestDto.setIssuer(didUrl);
 
         Map<String, Object> protectedHeaders = new HashMap<>();
-        protectedHeaders.put("x5c", true);
+        if (StringUtils.hasText(x5uEndpoint)) {
+            protectedHeaders.put("certificateUrl", buildX5uUrl(x5uEndpoint, appID, refID));
+            protectedHeaders.put("includeCertificateHash", true);
+        } else {
+            protectedHeaders.put("x5c", true);
+        }
         protectedHeaders.put("kid", true);
 
         cwtSignRequestDto.setProtectedHeader(protectedHeaders);
@@ -133,6 +149,15 @@ public abstract class Credential{
         CoseSignResponseDto coseSignResponseDto = coseSignatureService.cwtSign(cwtSignRequestDto);
 
         return coseSignResponseDto.getSignedData();
+    }
+
+    private static String buildX5uUrl(String endpoint, String appID, String refID) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(endpoint)
+                .queryParam(Constants.APPLICATION_ID, appID);
+        if (StringUtils.hasText(refID)) {
+            builder.queryParam(Constants.REFERENCE_ID, refID);
+        }
+        return builder.build().encode().toUriString();
     }
 
 }

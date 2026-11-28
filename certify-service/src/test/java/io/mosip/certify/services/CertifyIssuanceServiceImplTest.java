@@ -135,6 +135,7 @@ public class CertifyIssuanceServiceImplTest {
 
         ReflectionTestUtils.setField(issuanceService, "didUrl", "https://test.issuer.com");
         ReflectionTestUtils.setField(issuanceService, "domainUrl", "did:example:ldp");
+        ReflectionTestUtils.setField(issuanceService, "servletPath", "/v1/certify");
         ReflectionTestUtils.setField(issuanceService, "ledgerUtils", ledgerUtils);
         ReflectionTestUtils.setField(issuanceService, "statusListCredentialService", statusListCredentialService);
         ReflectionTestUtils.setField(issuanceService, "credentialLedgerService", credentialLedgerService);
@@ -880,8 +881,19 @@ public class CertifyIssuanceServiceImplTest {
         verify(auditWrapper).logAudit(eq(Action.VC_ISSUANCE), eq(ActionStatus.SUCCESS), any(), isNull());
     }
 
+    private static final String EXPECTED_X5U_ENDPOINT = "did:example:ldp/v1/certify/.well-known/qr-signing-cert";
+
     @Test
     public void getCredential_QRDataPresent_Claim169ValuesAdded() throws Exception {
+        W3CJsonLD mockW3CJsonLD = issueCredentialWithClaim169Qr();
+
+        verify(mockW3CJsonLD).signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), eq(EXPECTED_X5U_ENDPOINT));
+        verify(mockW3CJsonLD).signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), eq(EXPECTED_X5U_ENDPOINT));
+    }
+
+    // Shared flow for the Claim 169 QR tests: issues one credential with two QR entries
+    // and returns the credential mock so each test can verify how signQRData was called.
+    private W3CJsonLD issueCredentialWithClaim169Qr() throws Exception {
         request = createValidCredentialRequest(DEFAULT_FORMAT_LDP);
 
         when(parsedAccessToken.isActive()).thenReturn(true);
@@ -911,11 +923,10 @@ public class CertifyIssuanceServiceImplTest {
         when(pixelPass.getMappedData(eq(qrData2), anyMap(), anyMap(), eq(true))).thenReturn(mappedData2);
 
         // Mock signQRData to return signed QR strings
-        when(mockW3CJsonLD.signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString()))
+        when(mockW3CJsonLD.signQRData(eq("mappedData1"), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn("signedQR1");
-        when(mockW3CJsonLD.signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString()))
+        when(mockW3CJsonLD.signQRData(eq("mappedData2"), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn("signedQR2");
-
         when(pixelPass.generateQRData(eq("signedQR1"), eq(""))).thenReturn("qrCodeData1");
         when(pixelPass.generateQRData(eq("signedQR2"), eq(""))).thenReturn("qrCodeData2");
         // Usual formatter mocks
@@ -945,6 +956,7 @@ public class CertifyIssuanceServiceImplTest {
         assertEquals(2, claim169Values.size());
         assertTrue(claim169Values.contains("qrCodeData1"));
         assertTrue(claim169Values.contains("qrCodeData2"));
+        return mockW3CJsonLD;
     }
 
     @Test

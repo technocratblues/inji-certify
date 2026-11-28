@@ -71,6 +71,9 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
     @Value("${mosip.certify.data-provider-plugin.did-url}")
     private String didUrl;
 
+    @Value("${server.servlet.path:}")
+    private String servletPath;
+
     @Value("${mosip.certify.data-provider-plugin.rendering-template-id:}")
     private String renderTemplateId;
 
@@ -404,7 +407,8 @@ public class CertifyIssuanceServiceImpl implements VCIssuanceService {
                         qrSignatureAlgo,
                         qrSignAppId,
                         qrSignRefId,
-                        domainUrl
+                        domainUrl,
+                        domainUrl + Objects.toString(servletPath, "") + Constants.QR_SIGNING_CERT_PATH
                 );
                 log.info("Signed QR data for entry index {}", i);
                 if (qrSignedResult != null && !qrSignedResult.isEmpty()) {

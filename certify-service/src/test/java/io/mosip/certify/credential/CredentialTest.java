@@ -13,7 +13,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
-
+import java.util.Map;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
@@ -101,6 +101,60 @@ public class CredentialTest {
                 .thenThrow(new RuntimeException("cwt service failure"));
 
         credential.signQRData("p", "alg", "app", "ref", "did");
+    }
+
+    private static final String X5U_ENDPOINT = "https://certify.example.com/v1/certify/.well-known/qr-signing-cert";
+
+    // Runs signQRData and returns the protected-header map sent to keymanager.
+    private Map<String, Object> signQrAndCaptureProtectedHeader(String appId, String refId, String x5uEndpoint) {
+        CoseSignResponseDto response = new CoseSignResponseDto();
+        response.setSignedData("signed.cwt.data");
+        when(mockCoseSignatureService.cwtSign(any(CWTSignRequestDto.class))).thenReturn(response);
+
+        credential.signQRData("payload", "ES256", appId, refId, "did:example:123", x5uEndpoint);
+
+        ArgumentCaptor<CWTSignRequestDto> captor = ArgumentCaptor.forClass(CWTSignRequestDto.class);
+        verify(mockCoseSignatureService, times(1)).cwtSign(captor.capture());
+        return captor.getValue().getProtectedHeader();
+    }
+
+    @Test
+    public void testSignQRData_X5uEndpoint_AddsUrlWithIdsAndCertHashAndDropsX5c() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader("app-1", "ref-1", X5U_ENDPOINT);
+
+        assertEquals(X5U_ENDPOINT + "?applicationId=app-1&referenceId=ref-1", header.get("certificateUrl"));
+        assertTrue(Boolean.TRUE.equals(header.get("includeCertificateHash")));
+        assertFalse(header.containsKey("x5c"));
+    }
+
+    @Test
+    public void testSignQRData_BlankRefId_OmitsReferenceIdParam() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader("app-1", "", X5U_ENDPOINT);
+
+        assertEquals(X5U_ENDPOINT + "?applicationId=app-1", header.get("certificateUrl"));
+    }
+
+    @Test
+    public void testSignQRData_IdsWithSpecialChars_AreUrlEncoded() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader("app 1", "ref&2", X5U_ENDPOINT);
+
+        assertEquals(X5U_ENDPOINT + "?applicationId=app%201&referenceId=ref%262", header.get("certificateUrl"));
+    }
+
+    @Test
+    public void testSignQRData_NoEndpoint_FallsBackToX5c() {
+        Map<String, Object> header = signQrAndCaptureProtectedHeader("app-1", "ref-1", "   ");
+
+        assertTrue(Boolean.TRUE.equals(header.get("x5c")));
+        assertFalse(header.containsKey("certificateUrl"));
+        assertFalse(header.containsKey("includeCertificateHash"));
+    }
+
+    @Test
+    public void testSignQRData_KidIsRequestedWithAndWithoutEndpoint() {
+        assertTrue(Boolean.TRUE.equals(signQrAndCaptureProtectedHeader("app-1", "ref-1", null).get("kid")));
+        reset(mockCoseSignatureService);
+        assertTrue(Boolean.TRUE.equals(signQrAndCaptureProtectedHeader("app-1", "ref-1", X5U_ENDPOINT).get("kid")));
     }
 
 }

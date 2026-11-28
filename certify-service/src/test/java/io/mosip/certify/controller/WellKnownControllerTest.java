@@ -6,6 +6,8 @@ import io.mosip.certify.core.exception.InvalidRequestException;
 import io.mosip.certify.core.spi.CredentialConfigurationService;
 import io.mosip.certify.core.spi.JwksService;
 import io.mosip.certify.core.spi.VCIssuanceService;
+import io.mosip.kernel.keymanagerservice.dto.KeyPairGenerateResponseDto;
+import io.mosip.kernel.keymanagerservice.service.KeymanagerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -15,9 +17,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.io.ByteArrayInputStream;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -44,6 +51,9 @@ class WellKnownControllerTest {
 
     @MockBean
     private JwksService jwksService;
+
+    @MockBean
+    private KeymanagerService keymanagerService;
 
     @InjectMocks
     private WellKnownController wellKnownController;
@@ -191,5 +201,119 @@ class WellKnownControllerTest {
                 .andExpect(jsonPath("$.keys[1].kid").value("key2"));
 
         verify(jwksService, times(1)).getJwks();
+    }
+
+    private static final String TEST_CERT_PEM =
+            "-----BEGIN CERTIFICATE-----\n" +
+                    "MIIBijCCAS+gAwIBAgIUDACL0BUp7yAnNmAgHHQ8iQhBjhEwCgYIKoZIzj0EAwIw\n" +
+                    "GTEXMBUGA1UEAwwOVGVzdCBRUiBTaWduZXIwIBcNMjYxMTI4MDYyNDU3WhgPMjEy\n" +
+                    "NjExMDQwNjI0NTdaMBkxFzAVBgNVBAMMDlRlc3QgUVIgU2lnbmVyMFkwEwYHKoZI\n" +
+                    "zj0CAQYIKoZIzj0DAQcDQgAEGKu30CDi+Pqjk90x4loBQvmgZcSj6Lclo7Nz/3Dg\n" +
+                    "VUkYl0NzdYm+G0qWSuJfLmpr3ym+DduzdJCvNOJqRVCz2KNTMFEwHQYDVR0OBBYE\n" +
+                    "FKC13XgGJgKCO9nocrPdRFrTMAHBMB8GA1UdIwQYMBaAFKC13XgGJgKCO9nocrPd\n" +
+                    "RFrTMAHBMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIhAKEysDhE\n" +
+                    "Zwpv3jABR8R7SJI1sbMUruhtXG9DGPReRKwYAiEAs5PRqQ/pr9HFMK7/GfY8Cor1\n" +
+                    "fQZvw7e9IchqLTlLubA=\n" +
+                    "-----END CERTIFICATE-----";
+
+    private byte[] testCertDer() throws Exception {
+        return CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(TEST_CERT_PEM.getBytes())).getEncoded();
+    }
+
+    private void stubQrSigningCert(String appId, Optional<String> refId) {
+        KeyPairGenerateResponseDto keyPair = mock(KeyPairGenerateResponseDto.class);
+        when(keyPair.getCertificate()).thenReturn(TEST_CERT_PEM);
+        when(keymanagerService.getCertificate(appId, refId)).thenReturn(keyPair);
+    }
+
+    @Test
+    void getQrSigningCert_withReferenceId_returnsDerPkixCert() throws Exception {
+        stubQrSigningCert("CERTIFY_VC_SIGN_ED25519", Optional.of("ED25519_SIGN"));
+
+        mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "CERTIFY_VC_SIGN_ED25519")
+                        .param("referenceId", "ED25519_SIGN"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/pkix-cert"))
+                .andExpect(content().bytes(testCertDer()));
+
+        verify(keymanagerService, times(1)).getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.of("ED25519_SIGN"));
+    }
+
+    @Test
+    void getQrSigningCert_withoutReferenceId_passesEmptyOptional() throws Exception {
+        stubQrSigningCert("CERTIFY_VC_SIGN_ED25519", Optional.empty());
+
+        mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "CERTIFY_VC_SIGN_ED25519"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(testCertDer()));
+
+        verify(keymanagerService, times(1)).getCertificate("CERTIFY_VC_SIGN_ED25519", Optional.empty());
+    }
+
+    @Test
+    void getQrSigningCert_acceptPkcs7_returnsCertsOnlyBundle() throws Exception {
+        stubQrSigningCert("APP", Optional.empty());
+
+        byte[] body = mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "APP")
+                        .header("Accept", "application/pkcs7-mime; smime-type=\"certs-only\""))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/pkcs7-mime; smime-type=certs-only"))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        List<? extends Certificate> certs = List.copyOf(CertificateFactory.getInstance("X.509")
+                .generateCertificates(new ByteArrayInputStream(body)));
+        org.junit.jupiter.api.Assertions.assertEquals(1, certs.size());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(testCertDer(), certs.get(0).getEncoded());
+    }
+
+    @Test
+    void getQrSigningCert_acceptCoseX509_returnsCborByteString() throws Exception {
+        stubQrSigningCert("APP", Optional.empty());
+        byte[] der = testCertDer();
+
+        byte[] body = mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "APP")
+                        .header("Accept", "application/cose-x509"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/cose-x509"))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertCborByteString(body, der);
+    }
+
+    @Test
+    void getQrSigningCert_acceptCoseX509Chain_setsUsageParam() throws Exception {
+        stubQrSigningCert("APP", Optional.empty());
+        byte[] der = testCertDer();
+
+        byte[] body = mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "APP")
+                        .header("Accept", "application/cose-x509; usage=chain"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/cose-x509; usage=chain"))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertCborByteString(body, der);
+    }
+
+    @Test
+    void getQrSigningCert_unsupportedAccept_returns406() throws Exception {
+        mockMvc.perform(get("/.well-known/qr-signing-cert")
+                        .param("applicationId", "APP")
+                        .header("Accept", "application/x-pem-file"))
+                .andExpect(status().isNotAcceptable());
+
+        verifyNoInteractions(keymanagerService);
+    }
+
+    // Major type 2 header (0x40-0x5B), then the DER bytes exactly once.
+    private void assertCborByteString(byte[] body, byte[] der) {
+        org.junit.jupiter.api.Assertions.assertEquals(2, (body[0] & 0xFF) >> 5);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(der, Arrays.copyOfRange(body, body.length - der.length, body.length));
+        org.junit.jupiter.api.Assertions.assertTrue(body.length - der.length <= 5);
     }
 }

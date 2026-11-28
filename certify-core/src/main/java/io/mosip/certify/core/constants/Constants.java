@@ -6,6 +6,7 @@ public class Constants {
     public static final String SPACE = " ";
     public static final String APPLICATION_ID = "applicationId";
     public static final String REFERENCE_ID = "referenceId";
+    public static final String QR_SIGNING_CERT_PATH = "/.well-known/qr-signing-cert";
     public static final String CLIENT_ID = "client_id";
     public static final String CERTIFY_PARTNER_APP_ID = "CERTIFY_PARTNER";
     public static final String CERTIFY_SERVICE_APP_ID = "CERTIFY_SERVICE";
